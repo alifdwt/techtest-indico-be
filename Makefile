@@ -4,4 +4,14 @@ swag:
 run:
 	go run cmd/api/main.go
 
-.PHONY: swag run
+# Database migrations
+migrate-up:
+	migrate -path db/migration -database "postgres://postgres:postgres@localhost:2050/techtest_indico?sslmode=disable" up
+
+migrate-down:
+	migrate -path db/migration -database "postgres://postgres:postgres@localhost:2050/techtest_indico?sslmode=disable" down
+
+sqlc:
+	sqlc generate
+
+.PHONY: swag run migrate-up migrate-down sqlc

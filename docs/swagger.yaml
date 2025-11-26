@@ -1,5 +1,21 @@
-basePath: /api
 definitions:
+  dto.CreateVoucherRequest:
+    properties:
+      discount_percent:
+        maximum: 100
+        minimum: 0
+        type: number
+      expiry_date:
+        type: string
+      voucher_code:
+        description: voucher_code, discount_percent, expiry_date
+        maxLength: 255
+        type: string
+    required:
+    - discount_percent
+    - expiry_date
+    - voucher_code
+    type: object
   dto.LoginRequest:
     properties:
       email:
@@ -15,6 +31,38 @@ definitions:
       token:
         type: string
     type: object
+  dto.UpdateVoucherRequest:
+    properties:
+      discount_percent:
+        maximum: 100
+        minimum: 0
+        type: number
+      expiry_date:
+        type: string
+      voucher_code:
+        description: voucher_code, discount_percent, expiry_date
+        maxLength: 255
+        type: string
+    required:
+    - discount_percent
+    - expiry_date
+    - voucher_code
+    type: object
+  dto.VoucherResponse:
+    properties:
+      created_at:
+        type: string
+      discount_percent:
+        type: integer
+      expiry_date:
+        type: string
+      id:
+        type: string
+      updated_at:
+        type: string
+      voucher_code:
+        type: string
+    type: object
   util.Response:
     properties:
       data: {}
@@ -23,7 +71,6 @@ definitions:
       success:
         type: boolean
     type: object
-host: localhost:8080
 info:
   contact:
     email: support@swagger.io
@@ -72,6 +119,214 @@ paths:
       summary: User login
       tags:
       - Auth
+  /vouchers:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of vouchers
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Number of items per page
+        in: query
+        name: limit
+        type: integer
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      - default: expiry_date
+        description: Sort by field
+        in: query
+        name: sort_by
+        type: string
+      - default: asc
+        description: Sort order (asc or desc)
+        in: query
+        name: sort_order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/dto.VoucherResponse'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: List vouchers
+      tags:
+      - vouchers
+    post:
+      consumes:
+      - application/json
+      description: Create a new voucher with the provided details
+      parameters:
+      - description: Voucher data
+        in: body
+        name: voucher
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateVoucherRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.VoucherResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new voucher
+      tags:
+      - vouchers
+  /vouchers/{id}:
+    delete:
+      description: Delete a voucher by its ID
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a voucher
+      tags:
+      - vouchers
+    get:
+      description: Get a specific voucher by its ID
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.VoucherResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Get voucher by ID
+      tags:
+      - vouchers
+    put:
+      consumes:
+      - application/json
+      description: Update an existing voucher with new details
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated voucher data
+        in: body
+        name: voucher
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateVoucherRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.VoucherResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a voucher
+      tags:
+      - vouchers
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer" followed by a space and the token.
