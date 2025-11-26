@@ -19,7 +19,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
-		if tokenString == "iniadalahtokenbohongan" {
+		if tokenString != "iniadalahtokenbohongan" {
 			util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid token")
 			ctx.Abort()
 			return
