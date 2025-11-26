@@ -91,3 +91,112 @@ func (vh *VoucherHandler) ListVouchers(ctx *gin.Context) {
 		"total":    total,
 	})
 }
+
+// GetVoucher godoc
+// @Summary Get voucher by ID
+// @Description Get a specific voucher by its ID
+// @Tags vouchers
+// @Produce json
+// @Param id path string true "Voucher ID"
+// @Success 200 {object} util.Response{data=dto.VoucherResponse}
+// @Failure 400 {object} util.Response
+// @Failure 404 {object} util.Response
+// @Failure 500 {object} util.Response
+// @Router /vouchers/{id} [get]
+// @Security BearerAuth
+func (vh *VoucherHandler) GetVoucher(ctx *gin.Context) {
+	id := ctx.Param("id")
+	if id == "" {
+		util.ErrorResponse(ctx, http.StatusBadRequest, "Voucher ID is required")
+		return
+	}
+
+	res, err := vh.voucherService.GetVoucherByID(ctx, id)
+	if err != nil {
+		if err.Error() == "voucher not found" {
+			util.ErrorResponse(ctx, http.StatusNotFound, "Voucher not found")
+			return
+		}
+		util.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get voucher: "+err.Error())
+		return
+	}
+
+	util.SuccessResponse(ctx, http.StatusOK, "Voucher retrieved", res)
+}
+
+// UpdateVoucher godoc
+// @Summary Update a voucher
+// @Description Update an existing voucher with new details
+// @Tags vouchers
+// @Accept json
+// @Produce json
+// @Param id path string true "Voucher ID"
+// @Param voucher body dto.UpdateVoucherRequest true "Updated voucher data"
+// @Success 200 {object} util.Response{data=dto.VoucherResponse}
+// @Failure 400 {object} util.Response
+// @Failure 404 {object} util.Response
+// @Failure 500 {object} util.Response
+// @Router /vouchers/{id} [put]
+// @Security BearerAuth
+func (vh *VoucherHandler) UpdateVoucher(ctx *gin.Context) {
+	id := ctx.Param("id")
+	if id == "" {
+		util.ErrorResponse(ctx, http.StatusBadRequest, "Voucher ID is required")
+		return
+	}
+
+	var req dto.UpdateVoucherRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request format: "+err.Error())
+		return
+	}
+
+	if err := dto.ValidateStruct(&req); err != nil {
+		util.ErrorResponse(ctx, http.StatusBadRequest, "Validation error: "+err.Error())
+		return
+	}
+
+	res, err := vh.voucherService.UpdateVoucher(ctx, id, &req)
+	if err != nil {
+		if err.Error() == "voucher not found" {
+			util.ErrorResponse(ctx, http.StatusNotFound, "Voucher not found")
+			return
+		}
+		util.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to update voucher: "+err.Error())
+		return
+	}
+
+	util.SuccessResponse(ctx, http.StatusOK, "Voucher updated", res)
+}
+
+// DeleteVoucher godoc
+// @Summary Delete a voucher
+// @Description Delete a voucher by its ID
+// @Tags vouchers
+// @Produce json
+// @Param id path string true "Voucher ID"
+// @Success 200 {object} util.Response
+// @Failure 400 {object} util.Response
+// @Failure 404 {object} util.Response
+// @Failure 500 {object} util.Response
+// @Router /vouchers/{id} [delete]
+// @Security BearerAuth
+func (vh *VoucherHandler) DeleteVoucher(ctx *gin.Context) {
+	id := ctx.Param("id")
+	if id == "" {
+		util.ErrorResponse(ctx, http.StatusBadRequest, "Voucher ID is required")
+		return
+	}
+
+	err := vh.voucherService.DeleteVoucher(ctx, id)
+	if err != nil {
+		if err.Error() == "voucher not found" {
+			util.ErrorResponse(ctx, http.StatusNotFound, "Voucher not found")
+			return
+		}
+		util.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to delete voucher: "+err.Error())
+		return
+	}
+
+	util.SuccessResponse(ctx, http.StatusOK, "Voucher deleted", nil)
+}

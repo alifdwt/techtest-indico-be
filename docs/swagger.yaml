@@ -31,6 +31,23 @@ definitions:
       token:
         type: string
     type: object
+  dto.UpdateVoucherRequest:
+    properties:
+      discount_percent:
+        maximum: 100
+        minimum: 0
+        type: number
+      expiry_date:
+        type: string
+      voucher_code:
+        description: voucher_code, discount_percent, expiry_date
+        maxLength: 255
+        type: string
+    required:
+    - discount_percent
+    - expiry_date
+    - voucher_code
+    type: object
   dto.VoucherResponse:
     properties:
       created_at:
@@ -193,6 +210,121 @@ paths:
       security:
       - BearerAuth: []
       summary: Create a new voucher
+      tags:
+      - vouchers
+  /vouchers/{id}:
+    delete:
+      description: Delete a voucher by its ID
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a voucher
+      tags:
+      - vouchers
+    get:
+      description: Get a specific voucher by its ID
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.VoucherResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Get voucher by ID
+      tags:
+      - vouchers
+    put:
+      consumes:
+      - application/json
+      description: Update an existing voucher with new details
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated voucher data
+        in: body
+        name: voucher
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateVoucherRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.VoucherResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a voucher
       tags:
       - vouchers
 securityDefinitions:

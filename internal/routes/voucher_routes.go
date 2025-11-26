@@ -15,5 +15,8 @@ func SetupVoucherRoutes(
 	{
 		voucherGroup.POST("", voucherHandler.CreateVoucher)
 		voucherGroup.GET("", voucherHandler.ListVouchers)
+		voucherGroup.GET("/:id", voucherHandler.GetVoucher)
+		voucherGroup.PUT("/:id", voucherHandler.UpdateVoucher)
+		voucherGroup.DELETE("/:id", voucherHandler.DeleteVoucher)
 	}
 }
