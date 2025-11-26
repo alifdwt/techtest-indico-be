@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: techtest-indico-db
+    environment:
+      POSTGRES_DB: techtest_indico
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "2050:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - techtest-network
+
+  backend:
+    build: .
+    container_name: techtest-indico-be
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 2050
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: techtest_indico
+      GIN_MODE: release
+    ports:
+      - "2051:8080"
+    depends_on:
+      - postgres
+    networks:
+      - techtest-network
+
+volumes:
+  postgres_data:
+
+networks:
+  techtest-network:
+    driver: bridge
