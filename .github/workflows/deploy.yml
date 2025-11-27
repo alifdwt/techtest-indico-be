@@ -105,14 +105,20 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 300s
-          command_timeout: 60s
+          command_timeout: 120s
           script: |
             # Create project directory if it doesn't exist
             sudo mkdir -p /opt/techtest-indico-be
-            cd /opt/techtest-indico-be
+
+            # Backup existing directory if it exists
+            if [ -d "/opt/techtest-indico-be" ] && [ ! -d "/opt/techtest-indico-be/.git" ]; then
+              sudo mv /opt/techtest-indico-be /opt/techtest-indico-be-backup-$(date +%Y%m%d-%H%M%S)
+              sudo mkdir -p /opt/techtest-indico-be
+            fi
 
             # Set ownership
             sudo chown -R ${{ secrets.VPS_USER }}:${{ secrets.VPS_USER }} /opt/techtest-indico-be
+            cd /opt/techtest-indico-be
 
             # Initialize git repository if it doesn't exist
             if [ ! -d ".git" ]; then
@@ -123,8 +129,6 @@ jobs:
 
             # Create docker-compose.yml with correct image
             cat > docker-compose.yml << 'EOF'
-            version: '3.8'
-
             services:
               postgres:
                 image: postgres:16-alpine
@@ -171,7 +175,7 @@ jobs:
                   interval: 30s
                   timeout: 10s
                   retries: 3
-                  start_period: 40s
+                  start_period: 60s
 
             volumes:
               postgres_data:
@@ -196,38 +200,53 @@ jobs:
 
             # Wait for database to be ready
             echo "Waiting for database to be ready..."
-            sleep 45
+            sleep 60
 
-            # Run database migrations
+            # Run database migrations with retry logic
             echo "Running database migrations..."
-            docker compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
-            docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
-            CREATE TABLE IF NOT EXISTS vouchers (
-                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                voucher_code VARCHAR(50) UNIQUE NOT NULL,
-                discount_percent INTEGER NOT NULL CHECK (discount_percent >= 1 AND discount_percent <= 100),
-                expiry_date TIMESTAMP WITH TIME ZONE NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-            );
-            " || true
-
-            # Create indexes for better performance
-            docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
-            CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(voucher_code);
-            CREATE INDEX IF NOT EXISTS idx_vouchers_expiry_date ON vouchers(expiry_date);
-            " || true
+            for i in {1..5}; do
+              if docker compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" && \
+                 docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
+                 CREATE TABLE IF NOT EXISTS vouchers (
+                     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                     voucher_code VARCHAR(50) UNIQUE NOT NULL,
+                     discount_percent INTEGER NOT NULL CHECK (discount_percent >= 1 AND discount_percent <= 100),
+                     expiry_date TIMESTAMP WITH TIME ZONE NOT NULL,
+                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                 );
+                 " && \
+                 docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
+                 CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(voucher_code);
+                 CREATE INDEX IF NOT EXISTS idx_vouchers_expiry_date ON vouchers(expiry_date);
+                 "; then
+                echo "✅ Database migrations completed successfully!"
+                break
+              else
+                echo "⚠️ Migration attempt $i failed, retrying in 30 seconds..."
+                sleep 30
+              fi
+            done
 
             # Wait for backend to be ready
             echo "Waiting for backend to be ready..."
-            sleep 45
+            sleep 60
 
-            # Health check
+            # Health check with retry logic
             echo "Performing health check..."
-            if curl -f http://localhost:2051/health; then
-              echo "✅ Deployment successful!"
-            else
-              echo "❌ Health check failed!"
+            for i in {1..5}; do
+              if curl -f http://localhost:2051/health; then
+                echo "✅ Deployment successful!"
+                break
+              else
+                echo "⚠️ Health check attempt $i failed, retrying in 30 seconds..."
+                sleep 30
+              fi
+            done
+
+            # Final health check
+            if ! curl -f http://localhost:2051/health; then
+              echo "❌ Health check failed after all retries!"
               echo "Container logs:"
               docker compose logs backend
               echo "Container status:"
