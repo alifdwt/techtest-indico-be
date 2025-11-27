@@ -39,6 +39,13 @@ type VoucherListQuery struct {
 }
 
 type CSVUploadResponse struct {
-	SuccessCount int `json:"success_count"`
-	FailedCount  int `json:"failed_count"`
+	SuccessCount int         `json:"success_count"`
+	FailedCount  int         `json:"failed_count"`
+	FailedRows   []FailedRow `json:"failed_rows"`
+}
+
+type FailedRow struct {
+	RowNumber   int    `json:"row_number"`
+	VoucherCode string `json:"voucher_code"`
+	Reason      string `json:"reason"`
 }

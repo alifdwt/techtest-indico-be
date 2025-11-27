@@ -522,6 +522,12 @@ const docTemplate = `{
                 "failed_count": {
                     "type": "integer"
                 },
+                "failed_rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FailedRow"
+                    }
+                },
                 "success_count": {
                     "type": "integer"
                 }
@@ -547,6 +553,20 @@ const docTemplate = `{
                     "description": "voucher_code, discount_percent, expiry_date",
                     "type": "string",
                     "maxLength": 255
+                }
+            }
+        },
+        "dto.FailedRow": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "row_number": {
+                    "type": "integer"
+                },
+                "voucher_code": {
+                    "type": "string"
                 }
             }
         },
