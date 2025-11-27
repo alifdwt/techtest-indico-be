@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alifdwt/techtest-indico-be/internal/dto"
@@ -178,4 +182,85 @@ func (s *VoucherService) DeleteVoucher(ctx context.Context, id string) error {
 	}
 
 	return s.repo.DeleteVoucher(ctx, uuidPg)
+}
+
+func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CSVUploadResponse, error) {
+	requiredHeaders := []string{"voucher_code", "discount_percent", "expiry_date"}
+	reader := csv.NewReader(file)
+	var successCount, failedCount int
+
+	headers, err := reader.Read()
+	if err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("file CSV kosong")
+		}
+		return nil, fmt.Errorf("gagal membaca header CSV: %w", err)
+	}
+
+	headerMap := make(map[string]int)
+	for i, header := range headers {
+		normalizedHeader := strings.TrimSpace(strings.ToLower(header))
+		headerMap[normalizedHeader] = i
+	}
+
+	for _, required := range requiredHeaders {
+		if _, ok := headerMap[required]; !ok {
+			return nil, fmt.Errorf("header '%s' tidak ditemukan dalam file CSV", required)
+		}
+	}
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			failedCount++
+			continue
+		}
+
+		voucherCode := strings.TrimSpace(record[headerMap["voucher_code"]])
+		discountPercentStr := strings.TrimSpace(record[headerMap["discount_percent"]])
+		expiryDateStr := strings.TrimSpace(record[headerMap["expiry_date"]])
+
+		if voucherCode == "" || discountPercentStr == "" || expiryDateStr == "" {
+			failedCount++
+			continue
+		}
+
+		var discountPercent int
+		discountPercent, err = strconv.Atoi(discountPercentStr)
+		if err != nil || discountPercent < 0 || discountPercent > 100 {
+			failedCount++
+			continue
+		}
+
+		expiryDate, err := time.Parse("2006-01-02", expiryDateStr)
+		if err != nil {
+			expiryDate, err = time.Parse("2006-01-02 15:04:05", expiryDateStr)
+			if err != nil {
+				failedCount++
+				continue
+			}
+		}
+
+		obj := repository.CreateVoucherParams{
+			VoucherCode:     voucherCode,
+			DiscountPercent: int32(discountPercent),
+			ExpiryDate:      pgtype.Timestamptz{Time: expiryDate, Valid: true},
+		}
+		_, err = s.repo.CreateVoucher(ctx, obj)
+		if err != nil {
+
+			failedCount++
+			continue
+		}
+
+		successCount++
+	}
+
+	return &dto.CSVUploadResponse{
+		SuccessCount: successCount,
+		FailedCount:  failedCount,
+	}, nil
 }

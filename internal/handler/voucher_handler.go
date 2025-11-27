@@ -200,3 +200,32 @@ func (vh *VoucherHandler) DeleteVoucher(ctx *gin.Context) {
 
 	util.SuccessResponse(ctx, http.StatusOK, "Voucher deleted", nil)
 }
+
+// UploadCSV godoc
+// @Summary Upload vouchers from CSV
+// @Description Upload vouchers from a CSV file
+// @Tags vouchers
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "CSV file"
+// @Success 200 {object} util.Response{data=dto.CSVUploadResponse}
+// @Failure 400 {object} util.Response
+// @Failure 500 {object} util.Response
+// @Router /vouchers/upload-csv [post]
+// @Security BearerAuth
+func (vh *VoucherHandler) UploadCSV(ctx *gin.Context) {
+	file, _, err := ctx.Request.FormFile("file")
+	if err != nil {
+		util.ErrorResponse(ctx, http.StatusBadRequest, "Failed to retrieve file: "+err.Error())
+		return
+	}
+	defer file.Close()
+
+	res, err := vh.voucherService.UploadCSV(ctx, file)
+	if err != nil {
+		util.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to upload CSV: "+err.Error())
+		return
+	}
+
+	util.SuccessResponse(ctx, http.StatusOK, "CSV uploaded", res)
+}

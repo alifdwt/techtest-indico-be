@@ -1,0 +1,11 @@
+voucher_code,discount_percent,expiry_date
+NEWYEAR2024,15,2024-12-31
+RAMADAN30,30,2025-04-10
+WEEKEND10,10,2024-06-01 23:59:59
+INVALIDCODE,,2024-10-20  // Failed: discount_percent kosong
+RAMADAN30,25,2024-09-01 // Failed: duplicated voucher code
+BIGSALE50,50,2026-01-01
+ERRORVOUCHER,105,2024-11-20 // Failed: discount_percent > 100
+FREESHIP,5,2025-02-15
+WRONGDATE,20,15-05-2024 // Failed: Format tanggal salah
+TESTING,40,2025-03-10

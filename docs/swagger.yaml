@@ -1,4 +1,11 @@
 definitions:
+  dto.CSVUploadResponse:
+    properties:
+      failed_count:
+        type: integer
+      success_count:
+        type: integer
+    type: object
   dto.CreateVoucherRequest:
     properties:
       discount_percent:
@@ -325,6 +332,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Update a voucher
+      tags:
+      - vouchers
+  /vouchers/upload-csv:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload vouchers from a CSV file
+      parameters:
+      - description: CSV file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/dto.CSVUploadResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Upload vouchers from CSV
       tags:
       - vouchers
 securityDefinitions:

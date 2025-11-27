@@ -37,3 +37,8 @@ type VoucherListQuery struct {
 	Page      int    `form:"page,default=1" validate:"min=1"`
 	Limit     int    `form:"limit" validate:"min=1,max=100"`
 }
+
+type CSVUploadResponse struct {
+	SuccessCount int `json:"success_count"`
+	FailedCount  int `json:"failed_count"`
+}
