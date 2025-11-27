@@ -104,6 +104,10 @@ func (s *VoucherService) ListVouchers(ctx context.Context, query *dto.VoucherLis
 		responses = append(responses, s.toVoucherResponse(&voucher))
 	}
 
+	if responses == nil {
+		responses = []*dto.VoucherResponse{}
+	}
+
 	return responses, total, nil
 }
 
