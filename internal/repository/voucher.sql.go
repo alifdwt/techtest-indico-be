@@ -62,6 +62,37 @@ func (q *Queries) DeleteVoucher(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const getAllVouchersForExport = `-- name: GetAllVouchersForExport :many
+SELECT id, voucher_code, discount_percent, expiry_date, created_at, updated_at FROM vouchers ORDER BY created_at DESC
+`
+
+func (q *Queries) GetAllVouchersForExport(ctx context.Context) ([]Voucher, error) {
+	rows, err := q.db.Query(ctx, getAllVouchersForExport)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Voucher{}
+	for rows.Next() {
+		var i Voucher
+		if err := rows.Scan(
+			&i.ID,
+			&i.VoucherCode,
+			&i.DiscountPercent,
+			&i.ExpiryDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getVoucherByCode = `-- name: GetVoucherByCode :one
 SELECT id, voucher_code, discount_percent, expiry_date, created_at, updated_at FROM vouchers WHERE voucher_code = $1 LIMIT 1
 `
@@ -101,17 +132,14 @@ func (q *Queries) GetVoucherByID(ctx context.Context, id pgtype.UUID) (Voucher, 
 const listVouchers = `-- name: ListVouchers :many
 SELECT id, voucher_code, discount_percent, expiry_date, created_at, updated_at FROM vouchers
 WHERE ($3::text IS NULL OR voucher_code ILIKE '%' || $3 || '%')
-ORDER BY 
-  -- 1. Pengurutan ASC (Hanya mengurutkan jika sort_order=asc)
+ORDER BY
   CASE 
     WHEN $4::text = 'asc' AND $5::text = 'expiry_date' THEN expiry_date
-    -- Perhatikan: ketika tidak sesuai, kita kembalikan NULL, bukan kolom lain.
   END ASC, 
   CASE 
     WHEN $4::text = 'asc' AND $5::text = 'discount_percent' THEN discount_percent
   END ASC,
 
-  -- 2. Pengurutan DESC (Hanya mengurutkan jika sort_order=desc)
   CASE 
     WHEN $4::text = 'desc' AND $5::text = 'expiry_date' THEN expiry_date
   END DESC,
@@ -119,7 +147,6 @@ ORDER BY
     WHEN $4::text = 'desc' AND $5::text = 'discount_percent' THEN discount_percent
   END DESC,
   
-  -- 3. Default Fallback (Untuk memastikan ada urutan jika tidak ada sort_by yang valid)
   created_at DESC
 
 LIMIT $1 OFFSET $2
@@ -133,8 +160,6 @@ type ListVouchersParams struct {
 	SortBy    pgtype.Text `json:"sort_by"`
 }
 
-// Filter
-// Pengurutan
 func (q *Queries) ListVouchers(ctx context.Context, arg ListVouchersParams) ([]Voucher, error) {
 	rows, err := q.db.Query(ctx, listVouchers,
 		arg.Limit,

@@ -50,3 +50,6 @@ DELETE FROM vouchers WHERE id = $1;
 -- name: CountVouchers :one
 SELECT COUNT(*) FROM vouchers
 WHERE (sqlc.narg(search)::text IS NULL OR voucher_code ILIKE '%' || sqlc.narg(search) || '%');
+
+-- name: GetAllVouchersForExport :many
+SELECT * FROM vouchers ORDER BY created_at DESC;

@@ -14,10 +14,9 @@ type Querier interface {
 	CountVouchers(ctx context.Context, search pgtype.Text) (int64, error)
 	CreateVoucher(ctx context.Context, arg CreateVoucherParams) (Voucher, error)
 	DeleteVoucher(ctx context.Context, id pgtype.UUID) error
+	GetAllVouchersForExport(ctx context.Context) ([]Voucher, error)
 	GetVoucherByCode(ctx context.Context, voucherCode string) (Voucher, error)
 	GetVoucherByID(ctx context.Context, id pgtype.UUID) (Voucher, error)
-	// Filter
-	// Pengurutan
 	ListVouchers(ctx context.Context, arg ListVouchersParams) ([]Voucher, error)
 	UpdateVoucher(ctx context.Context, arg UpdateVoucherParams) (Voucher, error)
 }
