@@ -42,9 +42,6 @@ definitions:
         type: string
       password:
         type: string
-    required:
-    - email
-    - password
     type: object
   dto.LoginResponse:
     properties:
