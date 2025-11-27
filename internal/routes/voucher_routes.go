@@ -18,5 +18,7 @@ func SetupVoucherRoutes(
 		voucherGroup.GET("/:id", voucherHandler.GetVoucher)
 		voucherGroup.PUT("/:id", voucherHandler.UpdateVoucher)
 		voucherGroup.DELETE("/:id", voucherHandler.DeleteVoucher)
+
+		voucherGroup.POST("/upload-csv", voucherHandler.UploadCSV)
 	}
 }
