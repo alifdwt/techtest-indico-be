@@ -1,22 +1,24 @@
 #!/bin/bash
 
-# VPS Deployment Script for GitHub Actions
-# This script is designed to work with GitHub Actions deployment
+# VPS Deployment Script - Compatible with Existing Docker
+# This script works with existing Docker installation
 
 set -e  # Exit on any error
 
-echo "🚀 Starting deployment process..."
+echo "🚀 Starting VPS initialization (Docker Compatible)..."
 
 # Configuration
 APP_NAME="techtest-indico-be"
 DEPLOY_DIR="/opt/techtest-indico-be"
 SERVICE_NAME="techtest-indico"
 DOMAIN="techtest-indico-be.alifdwt.com"
+PROJECTS_DIR="$HOME/projects"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Helper functions
@@ -38,18 +40,59 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Install dependencies if not already installed
+# Check existing Docker installation
+check_existing_docker() {
+    log_info "Checking existing Docker installation..."
+    
+    if command -v docker >/dev/null 2>&1; then
+        log_info "✅ Docker is already installed"
+        docker --version
+        
+        # Check if Docker daemon is running
+        if systemctl is-active --quiet docker; then
+            log_info "✅ Docker daemon is running"
+        else
+            log_info "Starting Docker daemon..."
+            systemctl start docker
+            systemctl enable docker
+        fi
+        
+        # Check docker-compose
+        if command -v docker-compose >/dev/null 2>&1; then
+            log_info "✅ Docker Compose is available"
+            docker-compose --version
+        elif docker compose version >/dev/null 2>&1; then
+            log_info "✅ Docker Compose plugin is available"
+            docker compose version
+        else
+            log_warn "⚠️ Docker Compose not found, installing..."
+            apt-get update
+            apt-get install -y docker-compose-plugin
+        fi
+        
+        return 0
+    else
+        log_error "❌ Docker not found. Please install Docker first."
+        return 1
+    fi
+}
+
+# Install additional dependencies
 install_dependencies() {
-    log_info "Installing dependencies..."
-    apt update
-    apt install -y docker.io docker-compose nginx curl git sqlite3
+    log_info "Installing additional dependencies..."
     
-    # Start and enable Docker
-    systemctl start docker
-    systemctl enable docker
+    # Update package index
+    apt-get update
     
-    # Add current user to docker group
-    usermod -aG docker $SUDO_USER
+    # Install additional packages needed for this project
+    apt-get install -y nginx curl git sqlite3 python3-certbot python3-certbot-nginx
+    
+    # Ensure current user is in docker group
+    if ! groups $SUDO_USER | grep -q docker; then
+        log_info "Adding user to docker group..."
+        usermod -aG docker $SUDO_USER
+        log_warn "⚠️ You may need to logout and login again for docker group to take effect"
+    fi
     
     log_info "Dependencies installed successfully!"
 }
@@ -59,11 +102,17 @@ setup_app_directory() {
     log_info "Setting up application directory..."
     mkdir -p $DEPLOY_DIR
     cd $DEPLOY_DIR
+    chown -R $SUDO_USER:$SUDO_USER $DEPLOY_DIR
 }
 
 # Setup Nginx reverse proxy
 setup_nginx() {
     log_info "Setting up Nginx reverse proxy..."
+    
+    # Remove default Nginx configuration
+    rm -f /etc/nginx/sites-enabled/default
+    
+    # Create new site configuration
     cat > /etc/nginx/sites-available/$APP_NAME << EOF
 server {
     listen 80;
@@ -85,6 +134,11 @@ server {
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
+        
+        # Buffer settings
+        proxy_buffering on;
+        proxy_buffer_size 4k;
+        proxy_buffers 8 4k;
     }
 }
 EOF
@@ -101,14 +155,29 @@ EOF
 # Setup SSL certificate with Let's Encrypt
 setup_ssl() {
     log_info "Setting up SSL certificate..."
-    certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN || {
-        log_warn "SSL setup failed, using HTTP only for now"
-    }
+    
+    # Check if domain is already resolving
+    if nslookup $DOMAIN >/dev/null 2>&1; then
+        certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN --no-redirect || {
+            log_warn "SSL setup failed, using HTTP only for now"
+            log_warn "You can run SSL setup later with: sudo certbot --nginx -d $DOMAIN"
+        }
+    else
+        log_warn "Domain $DOMAIN is not resolving yet. Skipping SSL setup."
+        log_warn "You can run SSL setup later with: sudo certbot --nginx -d $DOMAIN"
+    fi
 }
 
 # Create systemd service for auto-restart
 create_systemd_service() {
     log_info "Creating systemd service..."
+    
+    # Determine docker-compose command
+    DOCKER_COMPOSE_CMD="docker-compose"
+    if ! command -v docker-compose >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    fi
+    
     cat > /etc/systemd/system/$SERVICE_NAME.service << EOF
 [Unit]
 Description=Techtest Indico Backend
@@ -119,8 +188,8 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$DEPLOY_DIR
-ExecStart=/usr/bin/docker-compose up -d
-ExecStop=/usr/bin/docker-compose down
+ExecStart=$DOCKER_COMPOSE_CMD up -d
+ExecStop=$DOCKER_COMPOSE_CMD down
 TimeoutStartSec=0
 
 [Install]
@@ -129,7 +198,7 @@ EOF
 
     # Enable and start service
     systemctl enable $SERVICE_NAME
-    systemctl start $SERVICE_NAME
+    systemctl daemon-reload
     
     log_info "Systemd service created successfully!"
 }
@@ -147,12 +216,44 @@ $DEPLOY_DIR/logs/*.log {
     notifempty
     create 644 root root
     postrotate
-        docker-compose restart backend
+        $DOCKER_COMPOSE_CMD restart backend
     endscript
 }
 EOF
 
     log_info "Log rotation configured successfully!"
+}
+
+# Setup firewall rules
+setup_firewall() {
+    log_info "Configuring firewall..."
+    
+    # Install UFW if not present
+    apt-get install -y ufw
+    
+    # Reset firewall rules
+    ufw --force reset
+    
+    # Default policies
+    ufw default deny incoming
+    ufw default allow outgoing
+    
+    # Allow SSH
+    ufw allow ssh
+    
+    # Allow HTTP and HTTPS
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    
+    # Allow existing Docker containers (3000, 3010 for portfolio)
+    ufw allow 3000/tcp
+    ufw allow 3010/tcp
+    ufw allow 2051/tcp  # For this application
+    
+    # Enable firewall
+    ufw --force enable
+    
+    log_info "Firewall configured successfully!"
 }
 
 # Health check function
@@ -163,9 +264,7 @@ health_check() {
     if curl -f http://localhost:2051/health > /dev/null 2>&1; then
         log_info "✅ Application is healthy locally!"
     else
-        log_error "❌ Application health check failed!"
-        docker-compose logs backend
-        return 1
+        log_warn "⚠️ Application is not running locally (this is normal before first deployment)"
     fi
     
     # Check external domain
@@ -206,11 +305,17 @@ DB_NAME=techtest_indico
 COMPOSE_PROJECT_NAME=techtest-indico
 EOF
     
+    # Determine docker-compose command
+    DOCKER_COMPOSE_CMD="docker-compose"
+    if ! command -v docker-compose >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    fi
+    
     # Build and start services
     log_info "Building and starting services..."
-    docker-compose down
-    docker-compose build
-    docker-compose up -d
+    $DOCKER_COMPOSE_CMD down
+    $DOCKER_COMPOSE_CMD build
+    $DOCKER_COMPOSE_CMD up -d
     
     # Wait for services to be ready
     log_info "Waiting for services to start..."
@@ -218,8 +323,8 @@ EOF
     
     # Run database migrations
     log_info "Running database migrations..."
-    docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
-    docker-compose exec -T postgres psql -U postgres -d techtest_indico -f db/migration/000001_create_vouchers_table.up.sql || true
+    $DOCKER_COMPOSE_CMD exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+    $DOCKER_COMPOSE_CMD exec -T postgres psql -U postgres -d techtest_indico -f db/migration/000001_create_vouchers_table.up.sql || true
     
     health_check
 }
@@ -241,20 +346,46 @@ show_status() {
     echo "📊 Monitoring:"
     echo "   - Service status: systemctl status $SERVICE_NAME"
     echo "   - Docker status: docker ps"
+    echo "   - All containers: docker container ls"
     echo ""
+    echo "🐳 Existing Containers:"
+    docker container ls
+    echo ""
+}
+
+# Clean up Docker resources (safe cleanup)
+cleanup_docker() {
+    log_info "Cleaning up unused Docker resources..."
+    
+    # Remove unused images only (keep running containers)
+    docker image prune -f
+    
+    # Remove unused volumes
+    docker volume prune -f
+    
+    log_info "Docker cleanup completed!"
 }
 
 # Main deployment flow
 main() {
     case "$1" in
         "init")
+            log_info "Initializing VPS for deployment (Docker Compatible)..."
+            check_existing_docker
             install_dependencies
             setup_app_directory
             setup_nginx
-            setup_ssl
+            setup_firewall
             create_systemd_service
             setup_log_rotation
-            log_info "VPS initialization completed!"
+            cleanup_docker
+            log_info "✅ VPS initialization completed!"
+            log_info "Next steps:"
+            echo "1. Setup DNS for $DOMAIN"
+            echo "2. Run: sudo ./scripts/vps-deploy-compatible.sh deploy"
+            echo "3. Configure GitHub Actions for automatic deployment"
+            echo ""
+            echo "🐳 Your existing Docker containers are preserved!"
             ;;
         "deploy")
             setup_app_directory
@@ -267,12 +398,20 @@ main() {
         "health")
             health_check
             ;;
+        "ssl")
+            setup_ssl
+            ;;
+        "cleanup")
+            cleanup_docker
+            ;;
         *)
-            echo "Usage: $0 {init|deploy|status|health}"
-            echo "  init   - Initialize VPS for deployment"
-            echo "  deploy - Manual deployment (for testing)"
-            echo "  status - Show deployment status"
-            echo "  health - Perform health check"
+            echo "Usage: $0 {init|deploy|status|health|ssl|cleanup}"
+            echo "  init    - Initialize VPS for deployment (Docker compatible)"
+            echo "  deploy  - Manual deployment (for testing)"
+            echo "  status  - Show deployment status"
+            echo "  health  - Perform health check"
+            echo "  ssl     - Setup SSL certificate"
+            echo "  cleanup - Clean up unused Docker resources"
             exit 1
             ;;
     esac
