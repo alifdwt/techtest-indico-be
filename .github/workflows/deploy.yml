@@ -1,4 +1,4 @@
-name: Build and Deploy to VPS (Final Fix)
+name: Build and Deploy to VPS (Container Conflict Fix)
 
 on:
   push:
@@ -110,22 +110,41 @@ jobs:
             # Create project directory if it doesn't exist
             sudo mkdir -p /opt/techtest-indico-be
 
-            # Backup existing directory if it exists
-            if [ -d "/opt/techtest-indico-be" ] && [ ! -d "/opt/techtest-indico-be/.git" ]; then
-              sudo mv /opt/techtest-indico-be /opt/techtest-indico-be-backup-$(date +%Y%m%d-%H%M%S)
-              sudo mkdir -p /opt/techtest-indico-be
-            fi
-
             # Set ownership
             sudo chown -R ${{ secrets.VPS_USER }}:${{ secrets.VPS_USER }} /opt/techtest-indico-be
             cd /opt/techtest-indico-be
 
+            # Backup existing directory if it exists and is not a git repo
+            if [ -d "." ] && [ ! -d ".git" ]; then
+              echo "Backing up existing directory..."
+              sudo mv . ../techtest-indico-be-backup-$(date +%Y%m%d-%H%M%S)
+              mkdir -p .
+            fi
+
             # Initialize git repository if it doesn't exist
             if [ ! -d ".git" ]; then
+              echo "Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git .
             else
+              echo "Pulling latest changes..."
               git pull origin main
             fi
+
+            # Stop and remove ALL existing containers with conflicting names
+            echo "Cleaning up existing containers..."
+            docker stop techtest-indico-db || true
+            docker stop techtest-indico-be || true
+            docker rm techtest-indico-db || true
+            docker rm techtest-indico-be || true
+
+            # Remove any containers using the same network
+            echo "Cleaning up network..."
+            docker network disconnect techtest-indico-be_techtest-network techtest-indico-db || true
+            docker network disconnect techtest-indico-be_techtest-network techtest-indico-be || true
+            docker network rm techtest-indico-be_techtest-network || true
+
+            # Clean up old docker-compose if it exists
+            docker compose down || true
 
             # Create docker-compose.yml with correct image
             cat > docker-compose.yml << 'EOF'
@@ -189,20 +208,34 @@ jobs:
             # Login to GHCR
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Stop existing containers
-            docker compose down || true
+            # Clean up old images and containers
+            echo "Cleaning up Docker resources..."
+            docker system prune -f
 
             # Pull latest image
             docker compose pull backend
 
             # Start services
+            echo "Starting services..."
             docker compose up -d
 
             # Wait for database to be ready
             echo "Waiting for database to be ready..."
             sleep 60
 
-            # Run database migrations with retry logic
+            # Check if database is ready
+            echo "Checking database health..."
+            for i in {1..10}; do
+              if docker compose exec -T postgres pg_isready -U postgres; then
+                echo "✅ Database is ready!"
+                break
+              else
+                echo "⚠️ Database not ready yet, waiting 10 seconds... (attempt $i/10)"
+                sleep 10
+              fi
+            done
+
+            # Run database migrations
             echo "Running database migrations..."
             for i in {1..5}; do
               if docker compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" && \
@@ -234,7 +267,7 @@ jobs:
 
             # Health check with retry logic
             echo "Performing health check..."
-            for i in {1..5}; do
+            for i in {1..10}; do
               if curl -f http://localhost:2051/health; then
                 echo "✅ Deployment successful!"
                 break
@@ -251,6 +284,8 @@ jobs:
               docker compose logs backend
               echo "Container status:"
               docker compose ps
+              echo "Network status:"
+              docker network ls
               exit 1
             fi
 
