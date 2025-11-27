@@ -572,10 +572,6 @@ const docTemplate = `{
         },
         "dto.LoginRequest": {
             "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
             "properties": {
                 "email": {
                     "type": "string"
