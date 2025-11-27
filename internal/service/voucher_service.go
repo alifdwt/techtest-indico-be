@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,12 +185,28 @@ func (s *VoucherService) DeleteVoucher(ctx context.Context, id string) error {
 }
 
 func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CSVUploadResponse, error) {
+	requiredHeaders := []string{"voucher_code", "discount_percent", "expiry_date"}
 	reader := csv.NewReader(file)
 	var successCount, failedCount int
 
-	_, err := reader.Read()
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("failed to read CSV header: %w", err)
+	headers, err := reader.Read()
+	if err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("file CSV kosong")
+		}
+		return nil, fmt.Errorf("gagal membaca header CSV: %w", err)
+	}
+
+	headerMap := make(map[string]int)
+	for i, header := range headers {
+		normalizedHeader := strings.TrimSpace(strings.ToLower(header))
+		headerMap[normalizedHeader] = i
+	}
+
+	for _, required := range requiredHeaders {
+		if _, ok := headerMap[required]; !ok {
+			return nil, fmt.Errorf("header '%s' tidak ditemukan dalam file CSV", required)
+		}
 	}
 
 	for {
@@ -202,9 +219,9 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 			continue
 		}
 
-		voucherCode := strings.TrimSpace(record[0])
-		discountPercentStr := strings.TrimSpace(record[1])
-		expiryDateStr := strings.TrimSpace(record[2])
+		voucherCode := strings.TrimSpace(record[headerMap["voucher_code"]])
+		discountPercentStr := strings.TrimSpace(record[headerMap["discount_percent"]])
+		expiryDateStr := strings.TrimSpace(record[headerMap["expiry_date"]])
 
 		if voucherCode == "" || discountPercentStr == "" || expiryDateStr == "" {
 			failedCount++
@@ -212,7 +229,7 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		}
 
 		var discountPercent int
-		_, err = fmt.Sscanf(discountPercentStr, "%d", &discountPercent)
+		discountPercent, err = strconv.Atoi(discountPercentStr)
 		if err != nil || discountPercent < 0 || discountPercent > 100 {
 			failedCount++
 			continue
@@ -234,6 +251,7 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		}
 		_, err = s.repo.CreateVoucher(ctx, obj)
 		if err != nil {
+
 			failedCount++
 			continue
 		}
