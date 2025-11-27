@@ -121,6 +121,58 @@ jobs:
               git pull origin main
             fi
 
+            # Create docker-compose.yml with correct image
+            cat > docker-compose.yml << 'EOF'
+            version: '3.8'
+
+            services:
+              postgres:
+                image: postgres:16-alpine
+                container_name: techtest-indico-db
+                environment:
+                  POSTGRES_DB: techtest_indico
+                  POSTGRES_USER: postgres
+                  POSTGRES_PASSWORD: postgres
+                ports:
+                  - "2050:5432"
+                volumes:
+                  - postgres_data:/var/lib/postgresql/data
+                networks:
+                  - techtest-network
+                restart: unless-stopped
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U postgres"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 30s
+              
+              backend:
+                image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+                container_name: techtest-indico-be
+                environment:
+                  DB_HOST: postgres
+                  DB_PORT: 5432
+                  DB_USER: postgres
+                  DB_PASSWORD: postgres
+                  DB_NAME: techtest_indico
+                  GIN_MODE: release
+                  PORT: 8080
+                ports:
+                  - "2051:8080"
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                networks:
+                  - techtest-network
+                restart: unless-stopped
+                healthcheck:
+                  test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+
             volumes:
               postgres_data:
                 driver: local
