@@ -283,6 +283,10 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		successCount++
 	}
 
+	if failedRows == nil {
+		failedRows = []dto.FailedRow{}
+	}
+
 	return &dto.CSVUploadResponse{
 		SuccessCount: successCount,
 		FailedCount:  len(failedRows),
