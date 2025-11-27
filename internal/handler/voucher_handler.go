@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/alifdwt/techtest-indico-be/internal/dto"
 	"github.com/alifdwt/techtest-indico-be/internal/service"
@@ -228,4 +229,40 @@ func (vh *VoucherHandler) UploadCSV(ctx *gin.Context) {
 	}
 
 	util.SuccessResponse(ctx, http.StatusOK, "CSV uploaded", res)
+}
+
+// ExportCSV godoc
+// @Summary Export vouchers to CSV
+// @Description Export all vouchers as a CSV file
+// @Tags vouchers
+// @Produce text/csv
+// @Success 200 {file} binary
+// @Failure 500 {object} util.Response
+// @Router /vouchers/export [get]
+// @Security BearerAuth
+func (vh *VoucherHandler) ExportCSV(ctx *gin.Context) {
+	records, err := vh.voucherService.ExportCSV(ctx)
+	if err != nil {
+		util.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to export CSV: "+err.Error())
+		return
+	}
+
+	ctx.Header("Content-Type", "text/csv")
+	ctx.Header("Content-Disposition", "attachment; filename=vouchers.csv")
+
+	for _, record := range records {
+		line := ""
+		for i, field := range record {
+			if i > 0 {
+				line += ","
+			}
+			// Escape quotes and wrap in quotes if field contains comma or quote
+			if strings.Contains(field, ",") || strings.Contains(field, "\"") {
+				field = strings.ReplaceAll(field, "\"", "\"\"")
+				field = "\"" + field + "\""
+			}
+			line += field
+		}
+		ctx.Writer.WriteString(line + "\n")
+	}
 }

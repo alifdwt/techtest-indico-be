@@ -334,6 +334,25 @@ paths:
       summary: Update a voucher
       tags:
       - vouchers
+  /vouchers/export:
+    get:
+      description: Export all vouchers as a CSV file
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: Export vouchers to CSV
+      tags:
+      - vouchers
   /vouchers/upload-csv:
     post:
       consumes:

@@ -234,6 +234,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/vouchers/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Export all vouchers as a CSV file",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "vouchers"
+                ],
+                "summary": "Export vouchers to CSV",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/vouchers/upload-csv": {
             "post": {
                 "security": [

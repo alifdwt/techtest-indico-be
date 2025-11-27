@@ -264,3 +264,27 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		FailedCount:  failedCount,
 	}, nil
 }
+
+func (s *VoucherService) ExportCSV(ctx context.Context) ([][]string, error) {
+	vouchers, err := s.repo.GetAllVouchersForExport(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var records [][]string
+	records = append(records, []string{"ID", "Voucher Code", "Discount Percent", "Expiry Date", "Created At", "Updated At"})
+
+	for _, voucher := range vouchers {
+		record := []string{
+			voucher.ID.String(),
+			voucher.VoucherCode,
+			strconv.Itoa(int(voucher.DiscountPercent)),
+			voucher.ExpiryDate.Time.Format("2006-01-02 15:04:05"),
+			voucher.CreatedAt.Time.Format("2006-01-02 15:04:05"),
+			voucher.UpdatedAt.Time.Format("2006-01-02 15:04:05"),
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
