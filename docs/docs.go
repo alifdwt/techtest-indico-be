@@ -522,6 +522,12 @@ const docTemplate = `{
                 "failed_count": {
                     "type": "integer"
                 },
+                "failed_rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FailedRow"
+                    }
+                },
                 "success_count": {
                     "type": "integer"
                 }
@@ -550,12 +556,22 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.FailedRow": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "row_number": {
+                    "type": "integer"
+                },
+                "voucher_code": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.LoginRequest": {
             "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
             "properties": {
                 "email": {
                     "type": "string"

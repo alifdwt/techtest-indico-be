@@ -3,6 +3,10 @@ definitions:
     properties:
       failed_count:
         type: integer
+      failed_rows:
+        items:
+          $ref: '#/definitions/dto.FailedRow'
+        type: array
       success_count:
         type: integer
     type: object
@@ -23,15 +27,21 @@ definitions:
     - expiry_date
     - voucher_code
     type: object
+  dto.FailedRow:
+    properties:
+      reason:
+        type: string
+      row_number:
+        type: integer
+      voucher_code:
+        type: string
+    type: object
   dto.LoginRequest:
     properties:
       email:
         type: string
       password:
         type: string
-    required:
-    - email
-    - password
     type: object
   dto.LoginResponse:
     properties:
