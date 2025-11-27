@@ -187,14 +187,15 @@ func (s *VoucherService) DeleteVoucher(ctx context.Context, id string) error {
 func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CSVUploadResponse, error) {
 	requiredHeaders := []string{"voucher_code", "discount_percent", "expiry_date"}
 	reader := csv.NewReader(file)
-	var successCount, failedCount int
+	var successCount int
+	var failedRows []dto.FailedRow
 
 	headers, err := reader.Read()
 	if err != nil {
 		if err == io.EOF {
-			return nil, fmt.Errorf("file CSV kosong")
+			return nil, fmt.Errorf("csv file is empty")
 		}
-		return nil, fmt.Errorf("gagal membaca header CSV: %w", err)
+		return nil, fmt.Errorf("failed to read csv headers: %w", err)
 	}
 
 	headerMap := make(map[string]int)
@@ -205,17 +206,24 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 
 	for _, required := range requiredHeaders {
 		if _, ok := headerMap[required]; !ok {
-			return nil, fmt.Errorf("header '%s' tidak ditemukan dalam file CSV", required)
+			return nil, fmt.Errorf("header '%s' not found in the csv header", required)
 		}
 	}
 
+	lineNumber := 1
+
 	for {
 		record, err := reader.Read()
+		lineNumber++
+
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			failedCount++
+			failedRows = append(failedRows, dto.FailedRow{
+				RowNumber: lineNumber,
+				Reason:    "csv row format is not vlaid",
+			})
 			continue
 		}
 
@@ -223,15 +231,27 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		discountPercentStr := strings.TrimSpace(record[headerMap["discount_percent"]])
 		expiryDateStr := strings.TrimSpace(record[headerMap["expiry_date"]])
 
+		recordFailed := func(reason string) {
+			failedRows = append(failedRows, dto.FailedRow{
+				RowNumber:   lineNumber,
+				VoucherCode: voucherCode,
+				Reason:      reason,
+			})
+		}
+
 		if voucherCode == "" || discountPercentStr == "" || expiryDateStr == "" {
-			failedCount++
+			recordFailed("voucher_code, discount_percent, or expiry_date are empty.")
 			continue
 		}
 
 		var discountPercent int
 		discountPercent, err = strconv.Atoi(discountPercentStr)
-		if err != nil || discountPercent < 0 || discountPercent > 100 {
-			failedCount++
+		if err != nil {
+			recordFailed(fmt.Sprintf("Discount percent must be a number: %s", err.Error()))
+			continue
+		}
+		if discountPercent < 0 || discountPercent > 100 {
+			recordFailed("Discount percent must be between 0 and 100.")
 			continue
 		}
 
@@ -239,7 +259,8 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		if err != nil {
 			expiryDate, err = time.Parse("2006-01-02 15:04:05", expiryDateStr)
 			if err != nil {
-				failedCount++
+
+				recordFailed("expiry_date format is not valid. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS.")
 				continue
 			}
 		}
@@ -251,8 +272,7 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 		}
 		_, err = s.repo.CreateVoucher(ctx, obj)
 		if err != nil {
-
-			failedCount++
+			recordFailed("Failed to save to database (Possibly duplicate voucher_code)")
 			continue
 		}
 
@@ -261,7 +281,8 @@ func (s *VoucherService) UploadCSV(ctx context.Context, file io.Reader) (*dto.CS
 
 	return &dto.CSVUploadResponse{
 		SuccessCount: successCount,
-		FailedCount:  failedCount,
+		FailedCount:  len(failedRows),
+		FailedRows:   failedRows,
 	}, nil
 }
 
