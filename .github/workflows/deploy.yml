@@ -1,4 +1,4 @@
-name: Build and Deploy to VPS
+name: Build and Deploy to VPS (Final Fix)
 
 on:
   push:
@@ -107,50 +107,49 @@ jobs:
           timeout: 300s
           command_timeout: 60s
           script: |
-            # Create deployment directory if it doesn't exist
+            # Create project directory if it doesn't exist
             sudo mkdir -p /opt/techtest-indico-be
             cd /opt/techtest-indico-be
 
-            # Download docker-compose.yml from repository
-            curl -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml
+            # Set ownership
+            sudo chown -R ${{ secrets.VPS_USER }}:${{ secrets.VPS_USER }} /opt/techtest-indico-be
 
-            # Create .env file with production settings
-            cat > .env << EOF
-            # Server Configuration
-            PORT=2051
-            GIN_MODE=release
+            # Initialize git repository if it doesn't exist
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/${{ github.repository }}.git .
+            else
+              git pull origin main
+            fi
 
-            # Database Configuration
-            DB_HOST=postgres
-            DB_PORT=2050
-            DB_USER=postgres
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_NAME=techtest_indico
+            volumes:
+              postgres_data:
+                driver: local
 
-            # Docker Configuration
-            COMPOSE_PROJECT_NAME=techtest-indico
-            REGISTRY=${{ env.REGISTRY }}
-            IMAGE_NAME=${{ env.IMAGE_NAME }}
-            IMAGE_TAG=latest
+            networks:
+              techtest-network:
+                driver: bridge
             EOF
 
-            # Update docker-compose.yml to use the new image
-            sed -i "s|build:|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g" docker-compose.yml
-            sed -i '/build:/,/context: ./d' docker-compose.yml
-            sed -i '/dockerfile: Dockerfile/d' docker-compose.yml
+            # Login to GHCR
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Pull latest image and restart services
-            sudo docker-compose pull
-            sudo docker-compose down
-            sudo docker-compose up -d
+            # Stop existing containers
+            docker compose down || true
+
+            # Pull latest image
+            docker compose pull backend
+
+            # Start services
+            docker compose up -d
 
             # Wait for database to be ready
             echo "Waiting for database to be ready..."
-            sleep 30
+            sleep 45
 
-            # Run database migrations if needed
-            sudo docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
-            sudo docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "
+            # Run database migrations
+            echo "Running database migrations..."
+            docker compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+            docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
             CREATE TABLE IF NOT EXISTS vouchers (
                 id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
                 voucher_code VARCHAR(50) UNIQUE NOT NULL,
@@ -162,24 +161,33 @@ jobs:
             " || true
 
             # Create indexes for better performance
-            sudo docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "
+            docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
             CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(voucher_code);
             CREATE INDEX IF NOT EXISTS idx_vouchers_expiry_date ON vouchers(expiry_date);
             " || true
 
+            # Wait for backend to be ready
+            echo "Waiting for backend to be ready..."
+            sleep 45
+
             # Health check
             echo "Performing health check..."
-            sleep 10
-            if curl -f http://localhost:2050/health; then
+            if curl -f http://localhost:2051/health; then
               echo "✅ Deployment successful!"
             else
               echo "❌ Health check failed!"
-              sudo docker-compose logs backend
+              echo "Container logs:"
+              docker compose logs backend
+              echo "Container status:"
+              docker compose ps
               exit 1
             fi
 
             # Clean up old images
-            sudo docker image prune -f
+            docker image prune -f
+
+            # Show container status
+            docker compose ps
 
   health-check:
     name: Final Health Check
