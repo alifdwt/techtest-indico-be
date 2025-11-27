@@ -9,8 +9,8 @@ func SetupAuthRoutes(
 	router *gin.Engine,
 	authHandler *handler.AuthHandler,
 ) {
-	apiGroup := router.Group("/api")
+	login := router.Group("/login")
 	{
-		apiGroup.POST("/login", authHandler.Login)
+		login.POST("", authHandler.Login)
 	}
 }

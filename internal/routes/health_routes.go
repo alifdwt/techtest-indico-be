@@ -5,9 +5,9 @@ import (
 )
 
 func SetupHealthRoutes(router *gin.Engine) {
-	apiGroup := router.Group("/api")
+	health := router.Group("/health")
 	{
-		apiGroup.GET("/health", func(ctx *gin.Context) {
+		health.GET("", func(ctx *gin.Context) {
 			ctx.JSON(200, gin.H{
 				"status":  "ok",
 				"message": "Technical test for Indico API is running successfully",
