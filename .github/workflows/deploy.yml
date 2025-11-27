@@ -1,0 +1,197 @@
+name: Build and Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24.4"
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build application
+        run: go build -o build/techtest-indico-be cmd/api/main.go
+
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 300s
+          command_timeout: 60s
+          script: |
+            # Create deployment directory if it doesn't exist
+            sudo mkdir -p /opt/techtest-indico-be
+            cd /opt/techtest-indico-be
+
+            # Download docker-compose.yml from repository
+            curl -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml
+
+            # Create .env file with production settings
+            cat > .env << EOF
+            # Server Configuration
+            PORT=2051
+            GIN_MODE=release
+
+            # Database Configuration
+            DB_HOST=postgres
+            DB_PORT=2050
+            DB_USER=postgres
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_NAME=techtest_indico
+
+            # Docker Configuration
+            COMPOSE_PROJECT_NAME=techtest-indico
+            REGISTRY=${{ env.REGISTRY }}
+            IMAGE_NAME=${{ env.IMAGE_NAME }}
+            IMAGE_TAG=latest
+            EOF
+
+            # Update docker-compose.yml to use the new image
+            sed -i "s|build:|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g" docker-compose.yml
+            sed -i '/build:/,/context: ./d' docker-compose.yml
+            sed -i '/dockerfile: Dockerfile/d' docker-compose.yml
+
+            # Pull latest image and restart services
+            sudo docker-compose pull
+            sudo docker-compose down
+            sudo docker-compose up -d
+
+            # Wait for database to be ready
+            echo "Waiting for database to be ready..."
+            sleep 30
+
+            # Run database migrations if needed
+            sudo docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+            sudo docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "
+            CREATE TABLE IF NOT EXISTS vouchers (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                voucher_code VARCHAR(50) UNIQUE NOT NULL,
+                discount_percent INTEGER NOT NULL CHECK (discount_percent >= 1 AND discount_percent <= 100),
+                expiry_date TIMESTAMP WITH TIME ZONE NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+            " || true
+
+            # Create indexes for better performance
+            sudo docker-compose exec -T postgres psql -U postgres -d techtest_indico -c "
+            CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(voucher_code);
+            CREATE INDEX IF NOT EXISTS idx_vouchers_expiry_date ON vouchers(expiry_date);
+            " || true
+
+            # Health check
+            echo "Performing health check..."
+            sleep 10
+            if curl -f http://localhost:2050/health; then
+              echo "✅ Deployment successful!"
+            else
+              echo "❌ Health check failed!"
+              sudo docker-compose logs backend
+              exit 1
+            fi
+
+            # Clean up old images
+            sudo docker image prune -f
+
+  health-check:
+    name: Final Health Check
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Final health check
+        run: |
+          sleep 30
+          if curl -f http://techtest-indico-be.alifdwt.com/health; then
+            echo "✅ Application is healthy and accessible!"
+          else
+            echo "❌ External health check failed!"
+            exit 1
+          fi
