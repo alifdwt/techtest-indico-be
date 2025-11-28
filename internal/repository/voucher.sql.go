@@ -132,23 +132,20 @@ func (q *Queries) GetVoucherByID(ctx context.Context, id pgtype.UUID) (Voucher, 
 const listVouchers = `-- name: ListVouchers :many
 SELECT id, voucher_code, discount_percent, expiry_date, created_at, updated_at FROM vouchers
 WHERE ($3::text IS NULL OR voucher_code ILIKE '%' || $3 || '%')
-ORDER BY
-  CASE 
-    WHEN $4::text = 'asc' AND $5::text = 'expiry_date' THEN expiry_date
-  END ASC, 
-  CASE 
-    WHEN $4::text = 'asc' AND $5::text = 'discount_percent' THEN discount_percent
-  END ASC,
+ORDER BY 
+    -- 1. DESCENDING SORTS
+    CASE WHEN $4::text = 'desc' AND $5::text = 'expiry_date' THEN expiry_date END DESC,
+    CASE WHEN $4::text = 'desc' AND $5::text = 'discount_percent' THEN discount_percent END DESC,
+    CASE WHEN $4::text = 'desc' AND $5::text = 'created_at' THEN created_at END DESC,
+    CASE WHEN $4::text = 'desc' AND $5::text = 'updated_at' THEN updated_at END DESC,
 
-  CASE 
-    WHEN $4::text = 'desc' AND $5::text = 'expiry_date' THEN expiry_date
-  END DESC,
-  CASE 
-    WHEN $4::text = 'desc' AND $5::text = 'discount_percent' THEN discount_percent
-  END DESC,
-  
-  created_at DESC
+    -- 2. ASCENDING SORTS
+    CASE WHEN $4::text = 'asc' AND $5::text = 'expiry_date' THEN expiry_date END ASC,
+    CASE WHEN $4::text = 'asc' AND $5::text = 'discount_percent' THEN discount_percent END ASC,
+    CASE WHEN $4::text = 'asc' AND $5::text = 'created_at' THEN created_at END ASC,
+    CASE WHEN $4::text = 'asc' AND $5::text = 'updated_at' THEN updated_at END ASC,
 
+    id ASC
 LIMIT $1 OFFSET $2
 `
 
