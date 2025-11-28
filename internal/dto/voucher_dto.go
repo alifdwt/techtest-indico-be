@@ -32,7 +32,7 @@ type VoucherResponse struct {
 type VoucherListQuery struct {
 	// search, sort_by, sort_order, page, limit
 	Search    string `form:"search"`
-	SortBy    string `form:"sort_by" validate:"oneof=expiry_date discount_percent"`
+	SortBy    string `form:"sort_by" validate:"oneof=expiry_date discount_percent created_at updated_at"`
 	SortOrder string `form:"sort_order"`
 	Page      int    `form:"page,default=1" validate:"min=1"`
 	Limit     int    `form:"limit" validate:"min=1,max=100"`
