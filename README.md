@@ -11,19 +11,11 @@ It provides a complete REST API for managing vouchers, including authentication,
 
 Production API runs behind Docker on VPS:
 
-```
-
 [https://techtest-indico-be.alifdwt.com](https://techtest-indico-be.alifdwt.com)
-
-```
 
 Swagger UI:
 
-```
-
 [https://techtest-indico-be.alifdwt.com/swagger/index.html](https://techtest-indico-be.alifdwt.com/swagger/index.html)
-
-```
 
 ---
 
