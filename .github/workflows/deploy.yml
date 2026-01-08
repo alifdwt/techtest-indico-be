@@ -1,9 +1,7 @@
-name: Build and Deploy to VPS (Production Ready)
+name: Deploy Techtest Indico (Production)
 
 on:
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
 
 env:
@@ -11,73 +9,49 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.24.4"
-
-      - name: Cache Go modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests
-        run: go test -v ./...
-
-      - name: Build application
-        run: go build -o build/techtest-indico-be cmd/api/main.go
-
-  build-and-push:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'
+  build-and-deploy:
+    name: Build & Deploy (Production)
+    runs-on: [self-hosted, linux, homelab]
 
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout code
+      # 1. Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # 2. Setup Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
+          cache: true
 
-      - name: Log in to Container Registry
+      # 3. Run tests
+      - name: Run tests
+        run: go test ./...
+
+      # 4. Login to GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      # 5. Extract Docker metadata
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
+            type=sha,prefix=main-
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # 6. Build & push Docker image
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -85,205 +59,36 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64
 
-  deploy:
-    name: Deploy to VPS
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          timeout: 300s
-          command_timeout: 120s
-          script: |
-            # Create project directory if it doesn't exist
-            sudo mkdir -p /opt/techtest-indico-be
-
-            # Set ownership
-            sudo chown -R ${{ secrets.VPS_USER }}:${{ secrets.VPS_USER }} /opt/techtest-indico-be
-            cd /opt/techtest-indico-be
-
-            # Initialize git repository if it doesn't exist
-            if [ ! -d ".git" ]; then
-              git clone https://github.com/${{ github.repository }}.git .
-            else
-              git pull origin main
-            fi
-
-            # Create docker-compose.yml with correct image
-            cat > docker-compose.yml << 'EOF'
-            version: '3.8'
-
-            services:
-              postgres:
-                image: postgres:16-alpine
-                container_name: techtest-indico-db
-                environment:
-                  POSTGRES_DB: techtest_indico
-                  POSTGRES_USER: postgres
-                  POSTGRES_PASSWORD: postgres
-                ports:
-                  - "2050:5432"
-                volumes:
-                  - postgres_data:/var/lib/postgresql/data
-                networks:
-                  - techtest-network
-                restart: unless-stopped
-                healthcheck:
-                  test: ["CMD-SHELL", "pg_isready -U postgres"]
-                  interval: 30s
-                  timeout: 10s
-                  retries: 3
-                  start_period: 30s
-              
-              backend:
-                image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                container_name: techtest-indico-be
-                environment:
-                  DB_HOST: postgres
-                  DB_PORT: 5432
-                  DB_USER: postgres
-                  DB_PASSWORD: postgres
-                  DB_NAME: techtest_indico
-                  GIN_MODE: release
-                  PORT: 8080
-                ports:
-                  - "2051:8080"
-                depends_on:
-                  postgres:
-                    condition: service_healthy
-                networks:
-                  - techtest-network
-                restart: unless-stopped
-                healthcheck:
-                  test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-                  interval: 30s
-                  timeout: 10s
-                  retries: 3
-                  start_period: 60s
-
-            volumes:
-              postgres_data:
-                driver: local
-
-            networks:
-              techtest-network:
-                driver: bridge
-            EOF
-
-            # Login to GHCR
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Stop and remove existing containers with conflicting names
-            echo "Cleaning up existing containers..."
-            docker stop techtest-indico-db || true
-            docker stop techtest-indico-be || true
-            docker rm techtest-indico-db || true
-            docker rm techtest-indico-be || true
-
-            # Clean up network
-            docker network disconnect techtest-indico-be_techtest-network techtest-indico-db || true
-            docker network disconnect techtest-indico-be_techtest-network techtest-indico-be || true
-            docker network rm techtest-indico-be_techtest-network || true
-
-            # Clean up old docker-compose if it exists
-            docker compose down || true
-
-            # Pull latest image
-            docker compose pull backend
-
-            # Start services
-            echo "Starting services..."
-            docker compose up -d
-
-            # Wait for database to be ready
-            echo "Waiting for database to be ready..."
-            sleep 60
-
-            # Check if database is ready
-            echo "Checking database health..."
-            for i in {1..10}; do
-              if docker compose exec -T postgres pg_isready -U postgres; then
-                echo "✅ Database is ready!"
-                break
-              else
-                echo "⚠️ Database not ready yet, waiting 10 seconds... (attempt $i/10)"
-                sleep 10
-              fi
-            done
-
-            # Run database migrations
-            echo "Running database migrations..."
-            for i in {1..5}; do
-              if docker compose exec -T postgres psql -U postgres -d techtest_indico -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" && \
-                 docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
-                 CREATE TABLE IF NOT EXISTS vouchers (
-                     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                     voucher_code VARCHAR(50) UNIQUE NOT NULL,
-                     discount_percent INTEGER NOT NULL CHECK (discount_percent >= 1 AND discount_percent <= 100),
-                     expiry_date TIMESTAMP WITH TIME ZONE NOT NULL,
-                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                 );
-                 " && \
-                 docker compose exec -T postgres psql -U postgres -d techtest_indico -c "
-                 CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(voucher_code);
-                 CREATE INDEX IF NOT EXISTS idx_vouchers_expiry_date ON vouchers(expiry_date);
-                 "; then
-                echo "✅ Database migrations completed successfully!"
-                break
-              else
-                echo "⚠️ Migration attempt $i failed, retrying in 30 seconds..."
-                sleep 30
-              fi
-            done
-
-            # Wait for backend to be ready
-            echo "Waiting for backend to be ready..."
-            sleep 60
-
-            # Final health check (with simplified logic)
-            echo "Performing final health check..."
-            if curl -f http://localhost:2051/health; then
-              echo "✅ Deployment successful!"
-            else
-              echo "⚠️ Health check failed, but deployment may still be successful"
-              echo "Container logs:"
-              docker compose logs backend
-              echo "Container status:"
-              docker compose ps
-            fi
-
-            # Clean up old images
-            docker image prune -f
-
-            # Show container status
-            docker compose ps
-
-  health-check:
-    name: Final Health Check
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Final health check
+      # 7. Deploy locally on home server
+      - name: Deploy backend locally
         run: |
-          sleep 30
-          if curl -f http://techtest-indico-be.alifdwt.com/health; then
-            echo "✅ Application is healthy and accessible!"
-          else
-            echo "⚠️ External health check failed, but application may still be working"
-            echo "Please check the application manually at: http://techtest-indico-be.alifdwt.com/health"
-          fi
+          echo "🔐 Login to GHCR"
+          echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          echo "📁 Go to project directory"
+          cd ~/projects/techtest-indico
+
+          echo "⬇️ Pull latest image"
+          docker compose pull backend
+
+          echo "🚀 Start services"
+          docker compose up -d
+
+          echo "🧹 Cleanup unused images"
+          docker image prune -f
+
+          echo "📦 Container status"
+          docker compose ps
+
+      # 8. Health check
+      - name: Health check (local)
+        run: |
+          echo "⏳ Waiting for backend to be ready..."
+          sleep 15
+
+          curl -f http://localhost:2051/health || (
+            echo "❌ Health check failed"
+            docker compose logs backend
+            exit 1
+          )
