@@ -1,16 +1,12 @@
-name: Deploy Techtest Indico (Production)
+name: Deploy Techtest Indico Backend (Production)
 
 on:
   push:
     branches: [main]
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   build-and-deploy:
-    name: Build & Deploy (Production)
+    name: Build & Deploy Backend (Homelab)
     runs-on: [self-hosted, linux, homelab]
 
     permissions:
@@ -18,7 +14,7 @@ jobs:
       packages: write
 
     steps:
-      # 1. Checkout source
+      # 1. Checkout source code
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -33,65 +29,52 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-      # 4. Login to GHCR
+      # 4. Login to GitHub Container Registry
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 5. Extract Docker metadata
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=main-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      # 6. Build & push Docker image
+      # 5. Build & push Docker image
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
 
-      # 7. Deploy locally on home server
+      # 6. Deploy locally on home server (NO SSH)
       - name: Deploy backend locally
         run: |
-          echo "🔐 Login to GHCR"
-          echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          set -e
 
           echo "📁 Go to project directory"
-          cd ~/projects/techtest-indico/techtest-indico-be
-
-          docker compose \
-          --env-file .env.production \
-          config | grep image
+          cd /home/alifdwt/projects/techtest-indico/techtest-indico-be
 
           echo "⬇️ Pull latest image"
           docker compose \
-          --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
-          --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
-          pull backend
+            --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
+            --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
+            pull backend
 
           echo "🚀 Start services"
           docker compose \
-          --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
-          --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
-          up -d
+            --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
+            --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
+            up -d
 
           echo "🧹 Cleanup unused images"
           docker image prune -f
 
           echo "📦 Container status"
-          docker compose ps
+          docker compose \
+            --project-directory /home/alifdwt/projects/techtest-indico \
+            ps
 
-      # 8. Health check
+      # 7. Health check
       - name: Health check (local)
         run: |
           echo "⏳ Waiting for backend to be ready..."
@@ -99,6 +82,8 @@ jobs:
 
           curl -f http://localhost:2051/health || (
             echo "❌ Health check failed"
-            docker compose logs backend
+            docker compose \
+              --project-directory /home/alifdwt/projects/techtest-indico \
+              logs backend
             exit 1
           )
