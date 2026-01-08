@@ -67,7 +67,7 @@ jobs:
           echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
           echo "📁 Go to project directory"
-          cd ~/projects/techtest-indico
+          cd ~/projects/techtest-indico/techtest-indico-be
 
           echo "⬇️ Pull latest image"
           docker compose pull backend
