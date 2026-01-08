@@ -69,14 +69,21 @@ jobs:
           echo "📁 Go to project directory"
           cd ~/projects/techtest-indico/techtest-indico-be
 
-          echo "DEBUG IMAGE_NAME=$IMAGE_NAME"
-          echo "DEBUG IMAGE_TAG=$IMAGE_TAG"
+          docker compose \
+          --env-file .env.production \
+          config | grep image
 
           echo "⬇️ Pull latest image"
-          docker compose --env-file .env.production pull backend
+          docker compose \
+          --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
+          --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
+          pull backend
 
           echo "🚀 Start services"
-          docker compose --env-file .env.production up -d
+          docker compose \
+          --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
+          --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
+          up -d
 
           echo "🧹 Cleanup unused images"
           docker image prune -f
