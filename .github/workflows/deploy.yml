@@ -51,28 +51,27 @@ jobs:
         run: |
           set -e
 
-          echo "📁 Go to project directory"
-          cd /home/alifdwt/projects/techtest-indico/techtest-indico-be
+          PROJECT_DIR="/home/alifdwt/projects/techtest-indico/techtest-indico-be"
+          ENV_FILE="$PROJECT_DIR/.env.production"
 
-          echo "⬇️ Pull latest image"
-          docker compose \
-            --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
-            --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
-            pull backend
+          COMPOSE="docker compose \
+            --project-directory $PROJECT_DIR \
+            --env-file $ENV_FILE"
+
+          echo "📁 Go to project directory"
+          cd $PROJECT_DIR
+
+          echo "⬇️ Pull latest backend image"
+          $COMPOSE pull backend
 
           echo "🚀 Start services"
-          docker compose \
-            --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
-            --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
-            up -d
+          $COMPOSE up -d
 
           echo "🧹 Cleanup unused images"
           docker image prune -f
 
           echo "📦 Container status"
-          docker compose \
-            --project-directory /home/alifdwt/projects/techtest-indico \
-            ps
+          $COMPOSE ps
 
       # 7. Health check
       - name: Health check (local)
@@ -83,7 +82,8 @@ jobs:
           curl -f http://localhost:2051/health || (
             echo "❌ Health check failed"
             docker compose \
-              --project-directory /home/alifdwt/projects/techtest-indico \
+              --project-directory /home/alifdwt/projects/techtest-indico/techtest-indico-be \
+              --env-file /home/alifdwt/projects/techtest-indico/techtest-indico-be/.env.production \
               logs backend
             exit 1
           )
