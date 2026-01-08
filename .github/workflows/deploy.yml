@@ -70,10 +70,10 @@ jobs:
           cd ~/projects/techtest-indico/techtest-indico-be
 
           echo "⬇️ Pull latest image"
-          docker compose pull backend
+          docker compose --env-file .env.production pull backend
 
           echo "🚀 Start services"
-          docker compose up -d
+          docker compose --env-file .env.production up -d
 
           echo "🧹 Cleanup unused images"
           docker image prune -f
