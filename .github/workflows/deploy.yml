@@ -14,39 +14,62 @@ jobs:
       packages: write
 
     steps:
-      # 1. Checkout source code
+      # ------------------------------------------------------------
+      # 1. Checkout source
+      # ------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ------------------------------------------------------------
       # 2. Setup Go
+      # ------------------------------------------------------------
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.4"
           cache: true
 
+      # ------------------------------------------------------------
       # 3. Run tests
+      # ------------------------------------------------------------
       - name: Run tests
         run: go test ./...
 
-      # 4. Login to GitHub Container Registry
-      - name: Log in to GHCR
+      # ------------------------------------------------------------
+      # 4. Login to GHCR
+      # ------------------------------------------------------------
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 5. Build & push Docker image
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
+      # ------------------------------------------------------------
+      # 5. Build & push Docker image (DNS-safe)
+      # ------------------------------------------------------------
+      - name: Build & push Docker image (with retry)
+        run: |
+          set -e
 
-      # 6. Deploy locally on home server (NO SSH)
+          retry() {
+            for i in 1 2 3; do
+              echo "🔁 Build attempt $i..."
+              docker buildx build \
+                --network host \
+                --push \
+                -t ghcr.io/${{ github.repository }}:latest \
+                . && break
+              echo "⚠️ Build failed, retrying in 20s..."
+              sleep 20
+            done
+          }
+
+          retry
+
+      # ------------------------------------------------------------
+      # 6. Deploy locally on home server
+      # ------------------------------------------------------------
       - name: Deploy backend locally
         run: |
           set -e
@@ -58,14 +81,23 @@ jobs:
             --project-directory $PROJECT_DIR \
             --env-file $ENV_FILE"
 
+          retry() {
+            for i in 1 2 3; do
+              echo "🔁 Attempt $i..."
+              "$@" && break
+              echo "⚠️ Command failed, retrying in 15s..."
+              sleep 15
+            done
+          }
+
           echo "📁 Go to project directory"
           cd $PROJECT_DIR
 
           echo "⬇️ Pull latest backend image"
-          $COMPOSE pull backend
+          retry $COMPOSE pull backend
 
-          echo "🚀 Run migration"
-          $COMPOSE run --rm migrate
+          echo "🗄️ Run database migrations"
+          retry $COMPOSE run --rm migrate
 
           echo "🚀 Start services"
           $COMPOSE up -d
@@ -76,11 +108,13 @@ jobs:
           echo "📦 Container status"
           $COMPOSE ps
 
+      # ------------------------------------------------------------
       # 7. Health check
+      # ------------------------------------------------------------
       - name: Health check (local)
         run: |
           echo "⏳ Waiting for backend to be ready..."
-          sleep 15
+          sleep 20
 
           curl -f http://localhost:2051/health || (
             echo "❌ Health check failed"
