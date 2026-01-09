@@ -8,8 +8,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER"]
       interval: 10s
@@ -19,14 +17,11 @@ services:
 
   migrate:
     image: migrate/migrate:v4.17.0
-    container_name: techtest-indico-migrate
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./db/migration:/migrations
-    networks:
-      - internal
     entrypoint:
       [
         "migrate",
@@ -54,6 +49,7 @@ services:
       PORT: 8080
     ports:
       - "2051:8080"
-    networks:
-      - internal
     restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -94,6 +94,9 @@ jobs:
           echo "📁 Go to project directory"
           cd $PROJECT_DIR
 
+          echo "🔄 Sync deployment repo"
+          git pull origin main
+
           echo "⬇️ Pull latest backend image"
           retry $COMPOSE pull backend
 
