@@ -78,6 +78,7 @@ jobs:
           ENV_FILE="$PROJECT_DIR/.env.production"
 
           COMPOSE="docker compose \
+            --file $PROJECT_DIR/docker-compose.yml \
             --project-directory $PROJECT_DIR \
             --env-file $ENV_FILE"
 
