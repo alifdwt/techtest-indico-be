@@ -64,6 +64,9 @@ jobs:
           echo "⬇️ Pull latest backend image"
           $COMPOSE pull backend
 
+          echo "🚀 Run migration"
+          $COMPOSE run --rm migrate
+
           echo "🚀 Start services"
           $COMPOSE up -d
 
